@@ -27,3 +27,8 @@ body,
     border-left: 2px solid orange;
     padding-left: 8px;
 }
+
+/* Message.js Image */
+.message__image {
+    padding: 1em;
+}

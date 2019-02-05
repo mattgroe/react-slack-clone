@@ -1,10 +1,15 @@
 import React from 'react';
+import uuidv4 from 'uuid/v4';
 import firebase from '../../firebase';
 import { Segment, Button, Input } from 'semantic-ui-react';
 import FileModal from './FileModal';
 
 class MessageForm extends React.Component {
     state = {
+        storageRef: firebase.storage().ref(),
+        uploadState: '',
+        uploadTask: null,
+        percentUploaded: 0,
         messages: '',
         channel: this.props.currentChannel,
         user: this.props.currentUser,
@@ -20,15 +25,19 @@ class MessageForm extends React.Component {
         this.setState({ [event.target.name]: event.target.value })
     }
 
-    createMessage = () => {
+    createMessage = (fileUrl = null) => {
         const message = {
             timestamp: firebase.database.ServerValue.TIMESTAMP,
             user: {
                 id: this.state.user.uid,
                 name: this.state.user.displayName,
                 avatar: this.state.user.photoURL
-            },
-            content: this.state.message
+            },  
+        };
+        if (fileUrl !== null) {
+            message['image'] = fileUrl;
+        } else {
+            message['content'] = this.state.message;
         }
         return message;
     }
@@ -53,6 +62,61 @@ class MessageForm extends React.Component {
         } else {
             this.setState({ errors: this.state.errors.concat({ message: 'Add a message'}) });
         }
+    }
+
+    uploadFile = (file, metadata) => {
+        const pathToUpload = this.state.channel.id;
+        const ref = this.props.messagesRef;
+        const filePath = `chat/public/${uuidv4()}.jpg`;
+
+        this.setState({
+            uploadState: 'uploading',
+            uploadTask: this.state.storageRef.child(filePath).put(file, metadata)
+        },
+            () => {
+                this.state.uploadTask.on('state_changed', snap => {
+                    const percentUploaded = Math.round(( snap.bytesTransferred / snap.totalBytes ) * 100);
+                    this.setState({ percentUploaded });
+                },
+                    err => {
+                        console.error(err);
+                        this.setState({
+                            errors: this.state.errors.concat(err),
+                            uploadState: 'eror',
+                            uploadTask: null
+                        })
+                    },
+                    () => {
+                        this.state.uploadTask.snapshot.ref.getDownloadURL().then(downloadUrl => {
+                            this.sendFileMessage(downloadUrl, ref, pathToUpload);
+                        })
+                        .catch(err => {
+                            console.error(err);
+                            this.setState({
+                                errors: this.state.errors.concat(err),
+                                uploadState: 'error',
+                                uploadTask: null
+                            })
+                        })
+                    }
+                )
+            }
+        )
+    };
+
+    sendFileMessage = (fileUrl, ref, pathToUpload) => {
+        ref.child(pathToUpload)
+            .push()
+            .set(this.createMessage(fileUrl))
+            .then(() => {
+                this.setState({ uploadeState: 'done' })
+            })
+            .catch(err => {
+                console.log('Error hitting firebase?' + err);
+                this.setState({
+                    errors: this.state.errors.concat(err)
+                })
+            })
     }
 
     render () {
@@ -92,6 +156,7 @@ class MessageForm extends React.Component {
                         icon='cloud upload'
                     />
                     <FileModal 
+                        uploadFile={this.uploadFile}
                         modal={modal}
                         closeModal={this.closeModal}
                     />
